@@ -1,0 +1,36 @@
+# Notes: commented dependencies are packages that will be required in the future but not yet decided on the verisons or which package to use. The commented dependencies are not required for the current version of the project.
+
+# ── Core ML ─────────────────────────────────────────────
+torch==2.12.0
+torchvision==0.27.0
+# transformers>=4.40.0
+# accelerate>=0.29.0
+
+# ── Memory optimisation (training) ──────────────────────
+bitsandbytes==0.49.2
+
+# ── Embeddings / Index ───────────────────────────────────
+faiss-gpu-cuvs==1.13.1
+# sentence-transformers>=3.0.0
+
+# ── ASR ──────────────────────────────────────────────────
+# openai-whisper>=20231117
+
+# ── OCR ──────────────────────────────────────────────────
+# paddlepaddle-gpu            # hoặc paddlepaddle cho CPU
+# paddleocr>=2.7.0
+
+# ── BM25 text search ─────────────────────────────────────
+# rank-bm25>=0.2.2
+
+# ── API ──────────────────────────────────────────────────
+# fastapi>=0.111.0
+# uvicorn[standard]>=0.29.0
+# pydantic>=2.7.0
+
+# ── Utilities ────────────────────────────────────────────
+# numpy>=1.26.0
+# opencv-python>=4.9.0
+# Pillow>=10.3.0
+# tqdm>=4.66.0
+# python-dotenv>=1.0.0

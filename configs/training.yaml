@@ -1,0 +1,51 @@
+# configs/training.yaml
+# Cấu hình huấn luyện — chạy trên Máy 1 (Tuần 3–8)
+
+hardware:
+  gpu_vram_gb: 16
+  precision: "bf16"
+  gradient_checkpointing: true
+  optimizer: "adamw_8bit"         # bitsandbytes 8-bit Adam
+  batch_size: 1                   # tăng lên 2 nếu bộ nhớ cho phép
+  gradient_accumulation_steps: 16 # effective batch size = 16–32
+
+curriculum:
+  # Stage A — Tuần 3–5
+  stage_a:
+    frames_per_clip: 1
+    description: "1 frame/clip — batch lớn nhất, ổn định nhất"
+
+  # Stage B — Tuần 5–6
+  stage_b:
+    frames_per_clip: 4
+    description: "4 frames/clip — batch trung bình"
+
+  # Stage C — Tuần 6–7
+  stage_c:
+    frames_per_clip: 8   # đến 16 nếu bộ nhớ cho phép
+    description: "8–16 frames/clip — batch nhỏ + gradient accumulation"
+
+phases:
+  # Phase 1 — General pretraining (Tuần 3–7)
+  phase1:
+    name: "general_pretraining"
+    weeks: "3-7"
+    query_conditioned: false      # không dùng X_Q ở Phase 1
+    data_sources:
+      - "cc3m"
+      - "yfcc100m"
+      - "vietnamese_news_asr"
+
+  # Phase 2 — Vietnamese SFT (Tuần 8)
+  phase2:
+    name: "vietnamese_sft"
+    weeks: "8"
+    query_conditioned: true       # bật X_Q conditioning
+    data_sources:
+      - "ai_challenge_annotated"
+      - "vietnamese_qa_pairs"
+
+checkpoints:
+  save_dir: "training/checkpoints"
+  rsync_to_machine2: true        # tự động rsync sau mỗi curriculum transition
+  save_every_n_steps: 500
