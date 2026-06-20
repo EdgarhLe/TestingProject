@@ -44,6 +44,7 @@ vl-jepa/
 ├── tests/
 │   ├── unit/               # Test từng module riêng lẻ
 │   ├── integration/        # Test luồng kết hợp nhiều module
+│   ├── setup/              # Test thiết lập môi trường development trên 2 máy.
 │   └── e2e/                # Test end-to-end toàn hệ thống
 │
 ├── scripts/                # Script tiện ích (rsync checkpoint, chạy indexing, v.v.)
