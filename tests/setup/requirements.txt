@@ -1,0 +1,9 @@
+transformers
+# Requires ffmpeg to be installed on the system.
+--index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://pypi.org/simple
+torchcodec
+accelerate
+matplotlib>=3.3.0
+requests>=2.23.0
+scipy>=1.4.1

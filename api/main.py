@@ -1,6 +1,6 @@
 """
 VL-JEPA API — FastAPI entry point
-Chạy: uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+Run: uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 """
 from fastapi import FastAPI
 
@@ -14,6 +14,6 @@ app = FastAPI(
 def health_check():
     return {"status": "ok"}
 
-# TODO Tuần 2: thêm router cho /query
+# TODO Week 2: add a router for /query
 # from api.routers import query
 # app.include_router(query.router)

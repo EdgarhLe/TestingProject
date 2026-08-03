@@ -1,0 +1,23 @@
+# Dataset pipeline config — see training_data_pipeline_design.md, sections 5-6.
+# metadata_path and cache.subdir are relative to DATA_ROOT (set in .env).
+
+sources:
+  cc3m:
+    source: cc3m
+    media_type: image
+    metadata_path: cc3m/metadata.tsv
+  # yfcc100m: dropped (#48-addendum) — Yahoo Webscope (the only source with
+  # real captions) is dead; the raw data itself never met the bar, not just
+  # a dead link. Replaced by panda70m below.
+  panda70m:
+    source: panda70m
+    media_type: video
+    metadata_path: panda70m/metadata.jsonl
+
+cache:
+  subdir: cache
+
+output:
+  # Relative to DATA_ROOT — matches the phase1/ directory convention agreed
+  # in issue #48 (DATA_ROOT/phase1/phase1_combined.jsonl).
+  train_jsonl: phase1/phase1_combined.jsonl

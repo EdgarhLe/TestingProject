@@ -3,27 +3,27 @@ import torch.nn as nn
 import torch.optim as optim
 
 def test_gpu_pipeline():
-    # Kiểm tra thiết bị có sẵn
+    # Check which device is available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Đang sử dụng thiết bị: {device}")
+    print(f"Using device: {device}")
     if device.type == "cpu":
-        print("Cảnh báo: CUDA không khả dụng, chạy trên CPU. Không kiểm tra được GPU.")
+        print("Warning: CUDA is not available, running on CPU. GPU cannot be tested.")
 
-    # Xây dựng mô hình nhỏ (2 lớp fully connected)
+    # Build a small model (2 fully connected layers)
     model = nn.Sequential(
         nn.Linear(10, 20),
         nn.ReLU(),
         nn.Linear(20, 5)
     ).to(device)
 
-    # Tạo dữ liệu giả
+    # Create dummy data
     batch_size = 4
     input_dim = 10
     output_dim = 5
-    x = torch.randn(batch_size, input_dim).to(device)          # đầu vào
-    y = torch.randint(0, output_dim, (batch_size,)).to(device) # nhãn cho CrossEntropyLoss
+    x = torch.randn(batch_size, input_dim).to(device)          # input
+    y = torch.randint(0, output_dim, (batch_size,)).to(device) # labels for CrossEntropyLoss
 
-    # Hàm mất mát và bộ tối ưu
+    # Loss function and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.01)
 
@@ -31,17 +31,17 @@ def test_gpu_pipeline():
     outputs = model(x)
     loss = criterion(outputs, y)
 
-    # Backward pass và cập nhật trọng số
+    # Backward pass and weight update
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
 
-    # Kiểm tra gradient đã được tính cho tất cả tham số
+    # Check that gradients were computed for all parameters
     for name, param in model.named_parameters():
         if param.grad is None:
-            raise RuntimeError(f"Gradient không được tính cho tham số {name}")
+            raise RuntimeError(f"Gradient was not computed for parameter {name}")
 
-    print("✅ Pipeline test thành công: forward và backward hoàn tất trên GPU.")
+    print("✅ Pipeline test succeeded: forward and backward completed on the GPU.")
     return True
 
 if __name__ == "__main__":

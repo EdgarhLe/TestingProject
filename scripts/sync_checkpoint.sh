@@ -1,33 +1,40 @@
 #!/bin/bash
-# scripts/sync_checkpoint.sh
-# Đồng bộ checkpoint mới nhất từ Máy 1 → Máy 2
-# Chạy trên Máy 1 sau mỗi curriculum transition (cuối Tuần 5, 6, 7, 8)
-#
-# Cách dùng: bash scripts/sync_checkpoint.sh
-
 set -e
 
-# Load biến môi trường
-source .env 2>/dev/null || true
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+else
+  echo "⚠️  Không tìm thấy .env — dùng giá trị mặc định."
+fi
 
-CHECKPOINT_DIR="${CHECKPOINT_DIR:-training/checkpoints}"
+CHECKPOINT_DIR="${CHECKPOINT_DIR:-training/checkpoints/deploy}"
 MACHINE2_HOST="${MACHINE2_HOST}"
-REMOTE_PATH="${MACHINE2_HOST}:/path/to/checkpoints"
+REMOTE_DIR="${REMOTE_DIR:-/c/Users/username/checkpoints}"
 
 if [ -z "$MACHINE2_HOST" ]; then
-  echo "LỖI: MACHINE2_HOST chưa được thiết lập trong .env"
+  echo "❌ LỖI: MACHINE2_HOST chưa được thiết lập trong .env"
   exit 1
 fi
 
-echo "Bắt đầu đồng bộ checkpoint..."
-echo "Nguồn:     $CHECKPOINT_DIR"
-echo "Đích:      $REMOTE_PATH"
+if [ ! -d "$CHECKPOINT_DIR" ]; then
+  echo "❌ LỖI: Không tìm thấy thư mục checkpoint local: $CHECKPOINT_DIR"
+  exit 1
+fi
+
+REMOTE_URI="${MACHINE2_HOST}:${REMOTE_DIR}"
+
+echo "🚀 Bắt đầu đồng bộ checkpoint..."
+echo "   Nguồn:  $CHECKPOINT_DIR"
+echo "   Đích:   $REMOTE_URI"
 echo ""
 
 rsync -avz --progress \
   --exclude="*.tmp" \
+  --no-perms --no-owner --no-group \
   "$CHECKPOINT_DIR/" \
-  "$REMOTE_PATH/"
+  "$REMOTE_URI/"
 
 echo ""
-echo "Hoàn thành. Checkpoint đã được đồng bộ sang Máy 2."
+echo "✅ Hoàn thành. Checkpoint đã được đồng bộ sang Máy 2."

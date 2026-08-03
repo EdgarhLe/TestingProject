@@ -2,12 +2,13 @@
 # Cấu hình kiến trúc mô hình VL-JEPA
 
 x_encoder:
-  model_name: "facebook/vjepa2-vitl"   # cập nhật sau khi xác nhận tên chính thức
+  model_name: "facebook/vjepa2-vitl-fpc64-256"   # Updated to official vjepa2-vitl-fpc64-256 model
   frozen: true                           # KHÔNG train X-Encoder
   output_dim: 1024
+  image_size: 256                        # input resolution, dùng bởi training/data/unified_dataset.py (UnifiedDataset)
 
 predictor:
-  model_name: "Qwen/Qwen2.5-0.5B"      # hoặc 1.5B
+  model_name: "Qwen/Qwen2.5-1.5B"      # Required VRAM: 5.82 GiB
   use_layers: "upper_half"              # tương đương layers 8–16 của Llama-3.2-1B trong paper
   attention_mask: "bidirectional"        # thay causal mask theo thiết kế VL-JEPA
   max_context_tokens: 512
@@ -19,3 +20,4 @@ y_encoder:
   projection_dim: 1536
 
 embedding_dim: 1536                      # shared space dimension (theo paper)
+base_learning_rate: 5e-5

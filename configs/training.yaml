@@ -33,7 +33,7 @@ phases:
     query_conditioned: false      # không dùng X_Q ở Phase 1
     data_sources:
       - "cc3m"
-      - "yfcc100m"
+      - "panda70m"
       - "vietnamese_news_asr"
 
   # Phase 2 — Vietnamese SFT (Tuần 8)
@@ -49,3 +49,6 @@ checkpoints:
   save_dir: "training/checkpoints"
   rsync_to_machine2: true        # tự động rsync sau mỗi curriculum transition
   save_every_n_steps: 500
+
+loss:
+  uniformity_lambda: 0.01
