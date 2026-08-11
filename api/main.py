@@ -14,6 +14,7 @@ app = FastAPI(
 def health_check():
     return {"status": "ok"}
 
-# TODO Week 2: add a router for /query
-# from api.routers import query
-# app.include_router(query.router)
+# TODO Tuần 2: thêm router cho /query
+
+from api.routers import query
+app.include_router(query.router)
