@@ -9,6 +9,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -271,6 +272,22 @@ def _repair_metadata_file(output_metadata_path: Path) -> None:
         print(f"panda70m: repaired {output_metadata_path} -- dropped {dropped} malformed line(s)")
 
 
+def _cleanup_source_if_done(video_id, tasks_per_video, processed_per_video, downloaded_sources):
+    """Delete a raw source video once every clip task for it has been
+    processed (success or failure). Raw source videos are full-length
+    (capped at 480p, but still much larger than any single cut clip) and
+    were previously never cleaned up -- they'd silently accumulate in
+    tmp_video_dir for the life of the run, consuming meaningfully more disk
+    than the final clips alone at any real scale.
+    """
+    if processed_per_video[video_id] < tasks_per_video[video_id]:
+        return  # more tasks for this video still pending -- not done yet
+    source_path = downloaded_sources.get(video_id)
+    if source_path is not None and source_path.exists():
+        source_path.unlink()
+    downloaded_sources[video_id] = None  # mark handled so this doesn't retry the unlink
+
+
 def prepare_panda70m(
     n_source_videos: int,
     output_metadata_path: Path,
@@ -296,6 +313,9 @@ def prepare_panda70m(
     tasks = expand_to_clip_tasks(rows)
     summary = PrepSummary(total_tasks=len(tasks))
 
+    tasks_per_video = Counter(task.video_id for task in tasks)
+    processed_per_video: Counter = Counter()
+
     clip_output_dir.mkdir(parents=True, exist_ok=True)
     output_metadata_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -308,44 +328,48 @@ def prepare_panda70m(
     downloaded_sources: dict[str, Path | None] = {}
     with open(output_metadata_path, file_mode, encoding="utf-8") as out:
         for task in tasks:
-            if task.clip_id in completed_ids:
-                summary.ok += 1
-                continue
+            try:
+                if task.clip_id in completed_ids:
+                    summary.ok += 1
+                    continue
 
-            if not task.caption:
-                summary.empty_caption += 1
-                continue
+                if not task.caption:
+                    summary.empty_caption += 1
+                    continue
 
-            if task.video_id not in downloaded_sources:
-                downloaded_sources[task.video_id] = download_source_video(
-                    task.youtube_url, tmp_video_dir, cookies_from_browser
+                if task.video_id not in downloaded_sources:
+                    downloaded_sources[task.video_id] = download_source_video(
+                        task.youtube_url, tmp_video_dir, cookies_from_browser
+                    )
+                source_video = downloaded_sources[task.video_id]
+                if source_video is None:
+                    summary.broken_download += 1
+                    continue
+
+                clip_path = clip_output_dir / f"{task.clip_id}.mp4"
+                if not cut_clip(source_video, task.start, task.end, clip_path):
+                    summary.broken_clip += 1
+                    continue
+
+                probed = probe_clip(clip_path)
+                if probed is None:
+                    summary.broken_clip += 1
+                    clip_path.unlink(missing_ok=True)
+                    continue
+
+                num_frames, duration = probed
+                out.write(
+                    json.dumps({
+                        "id": task.clip_id,
+                        "url": task.youtube_url,
+                        "caption": task.caption,
+                        "num_frames": num_frames,
+                        "duration": duration,
+                    }) + "\n"
                 )
-            source_video = downloaded_sources[task.video_id]
-            if source_video is None:
-                summary.broken_download += 1
-                continue
-
-            clip_path = clip_output_dir / f"{task.clip_id}.mp4"
-            if not cut_clip(source_video, task.start, task.end, clip_path):
-                summary.broken_clip += 1
-                continue
-
-            probed = probe_clip(clip_path)
-            if probed is None:
-                summary.broken_clip += 1
-                clip_path.unlink(missing_ok=True)
-                continue
-
-            num_frames, duration = probed
-            out.write(
-                json.dumps({
-                    "id": task.clip_id,
-                    "url": task.youtube_url,
-                    "caption": task.caption,
-                    "num_frames": num_frames,
-                    "duration": duration,
-                }) + "\n"
-            )
-            summary.ok += 1
+                summary.ok += 1
+            finally:
+                processed_per_video[task.video_id] += 1
+                _cleanup_source_if_done(task.video_id, tasks_per_video, processed_per_video, downloaded_sources)
 
     return summary

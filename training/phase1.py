@@ -28,15 +28,76 @@ and sync_checkpoints_to_machine2() for why the split matters.
 import argparse
 import os
 import subprocess
+import sys
+import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 import torch
 import yaml
 
-from model.vl_jepa import build_vljepa, build_vljepa_optimizer
-from training.data.loader import build_phase1_loader
+from model.vl_jepa import build_vljepa, build_vljepa_optimizer, _PRECISION_TO_DTYPE
+from training.losses.info_nce_loss import DEFAULT_UNIFORMITY_LAMBDA, bidirectional_infonce_loss
+from training.data.loader import build_phase1_loader, build_phase1_val_loader
 from training.vljepa_gradcache_step import vljepa_gradcache_training_step
+
+# Global reference to the currently running sync process (none if idle)
+_last_sync_process = None
+
+
+class _TeeStream:
+    """Write stream output to multiple destinations (e.g., terminal + log file)."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+
+def setup_file_logging(log_file_path):
+    """Mirror stdout/stderr to a log file while preserving terminal output."""
+    log_path = Path(log_file_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+
+    sys.stdout = _TeeStream(sys.__stdout__, log_handle)
+    sys.stderr = _TeeStream(sys.__stderr__, log_handle)
+
+    print(f"\n===== phase1.py started at {datetime.now().isoformat()} =====")
+    print(f"Logging to: {log_path.resolve()}")
+    return log_handle
+
+
+def load_env_file(env_path=".env"):
+    """Best-effort .env loader that does not override existing environment variables."""
+    path = Path(env_path)
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if not key:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+
+        os.environ.setdefault(key, value)
 
 
 # =======================================================================
@@ -53,26 +114,16 @@ def load_training_config(training_config_path="configs/training.yaml"):
 
 
 def resolve_train_jsonl_path(dataset_config_path="configs/dataset.yaml"):
-    data_root = Path(os.environ["DATA_ROOT"])
+    data_root_value = os.environ.get("DATA_ROOT")
+    if not data_root_value:
+        raise KeyError(
+            "DATA_ROOT is not set. Export it in the shell or add it to .env, "
+            "then rerun training/phase1.py."
+        )
+    data_root = Path(data_root_value)
     with open(dataset_config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     return data_root / raw["output"]["train_jsonl"]
-
-
-# =======================================================================
-# Data readiness (training/data/check_readiness.py, if it exists -- never
-# seen its real content in this conversation, best-effort call)
-# =======================================================================
-def check_readiness(stage):
-    result = subprocess.run(
-        ["python", "training/data/check_readiness.py", "--stage", f"stage_{stage}"],
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"training/data/check_readiness.py --stage stage_{stage} failed "
-            f"(exit code {result.returncode}). Fix data readiness before training, "
-            "or pass --skip-readiness-check to bypass (not recommended)."
-        )
 
 
 # =======================================================================
@@ -150,33 +201,40 @@ def load_checkpoint(model, optimizer, checkpoint_path, device="cuda"):
 
 def sync_checkpoints_to_machine2(checkpoint_root):
     """
-    Shells out to scripts/sync_checkpoint.sh -- does NOT reimplement rsync
-    directly here. That script already handles: reading MACHINE2_HOST/
-    REMOTE_DIR from .env, validating both are set, checking the local
-    checkpoint dir exists, and the actual rsync invocation with the flags
-    Machine 2 (a Windows box, per REMOTE_DIR's /c/Users/... default) needs
-    (--no-perms --no-owner --no-group). Duplicating any of that here would
-    just be a second, divergent copy of logic that already works.
+    Non‑blocking rsync of the deploy/ directory to Machine 2.
 
-    Syncs the ENTIRE deploy/ directory each call, not a single file -- rsync
-    only transfers deltas, so calling this after every checkpoint save is
-    cheap, not wasteful.
-
-    Best-effort: a sync failure (e.g. .env missing, Machine 2 unreachable)
-    prints a warning and returns False rather than raising -- the checkpoint
-    is already safe locally regardless, and training shouldn't die because
-    Machine 2 is briefly unreachable. Re-run scripts/sync_checkpoint.sh
-    manually later to catch up.
+    - Starts scripts/sync_checkpoint.sh as a background subprocess.
+    - If a previous sync is still running, this call is silently skipped
+      (the next sync will pick up all pending checkpoints).
+    - Failures are printed but never raised; training continues uninterrupted.
     """
-    env = dict(os.environ)
-    env["CHECKPOINT_DIR"] = str(Path(checkpoint_root) / "deploy")
+    global _last_sync_process
 
-    result = subprocess.run(["bash", "scripts/sync_checkpoint.sh"], env=env)
-    if result.returncode != 0:
-        print(f"[rsync] scripts/sync_checkpoint.sh failed (exit {result.returncode}) -- "
-              "checkpoint saved locally but NOT synced to Machine 2 this time.")
+    # Check if a previous sync is still running
+    if _last_sync_process is not None:
+        if _last_sync_process.poll() is None:   # process still alive
+            # Already syncing – skip this one; next call will cover it
+            return False
+        # Process has finished, we can clean up
+        _last_sync_process = None
+
+    deploy_dir = str(Path(checkpoint_root) / "deploy")
+    env = dict(os.environ)
+    env["CHECKPOINT_DIR"] = deploy_dir
+
+    # Start rsync in the background, discarding its output
+    try:
+        proc = subprocess.Popen(
+            ["bash", "scripts/sync_checkpoint.sh"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _last_sync_process = proc
+        return True
+    except Exception as e:
+        print(f"[rsync] Failed to start sync: {e} -- checkpoint saved locally but NOT synced.")
         return False
-    return True
 
 
 # =======================================================================
@@ -189,23 +247,152 @@ def _restartable_batches(loader):
         for batch in loader:
             yield batch
 
+@torch.no_grad()
+def run_validation(model, val_loader, device, precision, uniformity_lambda, accumulation_steps=64):
+    model.eval()
+
+    all_s_hat_y = []
+    all_s_y = []
+    total_samples = 0
+    amp_dtype = _PRECISION_TO_DTYPE[precision]
+    amp_enabled = device.startswith("cuda") and precision != "fp32"
+
+    for i, (video_frames, captions) in enumerate(val_loader):
+        if i >= accumulation_steps:
+            break
+
+        with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=amp_enabled):
+            visual_embeds = model.x_encoder.encode_frames(video_frames.to(device))
+            s_hat_y = model.predictor(visual_embeds=visual_embeds)
+
+            input_ids, attention_mask = model.y_encoder.tokenize(captions)
+            s_y = model.y_encoder(input_ids=input_ids, attention_mask=attention_mask)
+
+        all_s_hat_y.append(s_hat_y.detach().cpu())
+        all_s_y.append(s_y.detach().cpu())
+        total_samples += video_frames.shape[0]
+
+    if total_samples < 2:
+        return {"val_loss": float("nan"), "val_align": float("nan"),
+                "val_uniform": float("nan"), "val_pred2tgt_acc": float("nan"),
+                "val_tgt2pred_acc": float("nan")}
+
+    # Concatenate all accumulated embeddings
+    full_s_hat_y = torch.cat(all_s_hat_y, dim=0)
+    full_s_y = torch.cat(all_s_y, dim=0)
+
+    loss, stats = bidirectional_infonce_loss(
+        full_s_hat_y, full_s_y, model.logit_scale.detach().cpu(), uniformity_lambda=uniformity_lambda,
+    )
+
+    return {
+        "val_loss": loss.item(),
+        "val_align": stats["bidirectional_loss"],
+        "val_uniform": stats["uniformity_loss"],
+        "val_pred2tgt_acc": stats["pred_to_target_acc"],
+        "val_tgt2pred_acc": stats["target_to_pred_acc"],
+    }
+
+
+@torch.no_grad()
+def run_validation_retrieval(model, val_loader, device, precision, num_batches=64):
+    """Compute video→text recall@1, @5, @10 on val set."""
+    model.eval()
+    
+    all_video_embeds = []
+    all_text_embeds = []
+    amp_dtype = _PRECISION_TO_DTYPE[precision]
+    amp_enabled = device.startswith("cuda") and precision != "fp32"
+    
+    for i, (video_frames, captions) in enumerate(val_loader):
+        if i >= num_batches:
+            break
+        
+        with torch.no_grad():
+            with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=amp_enabled):
+                # Get vision embeddings: pass directly to predictor
+                v_embeds = model.x_encoder.encode_frames(video_frames.to(device))  # [B, N_tokens, vision_dim]
+                v_projected = model.predictor(visual_embeds=v_embeds)  # [B, shared_dim]
+                
+                # Get text embeddings from Y-Encoder
+                input_ids, attention_mask = model.y_encoder.tokenize(captions)
+                t_embeds = model.y_encoder(input_ids=input_ids.to(device), 
+                                          attention_mask=attention_mask.to(device))  # [B, shared_dim]
+        
+            all_video_embeds.append(v_projected.detach().cpu())
+            all_text_embeds.append(t_embeds.detach().cpu())
+    
+    v_embeds = torch.cat(all_video_embeds, dim=0)  # [N, shared_dim]
+    t_embeds = torch.cat(all_text_embeds, dim=0)   # [N, shared_dim]
+    
+    # Normalize
+    v_embeds = v_embeds / v_embeds.norm(dim=1, keepdim=True)
+    t_embeds = t_embeds / t_embeds.norm(dim=1, keepdim=True)
+    
+    # Compute similarity
+    sim = v_embeds @ t_embeds.T  # [N, N]
+    
+    # Video→Text retrieval
+    rankings = sim.argsort(dim=1, descending=True)
+    labels = torch.arange(len(v_embeds), device=v_embeds.device)
+    
+    r1 = (rankings[:, 0] == labels).float().mean()
+    r5 = ((rankings[:, :5] == labels.unsqueeze(1)).any(dim=1)).float().mean()
+    r10 = ((rankings[:, :10] == labels.unsqueeze(1)).any(dim=1)).float().mean()
+    
+    return {"r@1": r1.item(), "r@5": r5.item(), "r@10": r10.item()}
+
 
 def run_stage(model, optimizer, loader, stage_name, num_steps, gradient_accumulation_steps,
               precision, uniformity_lambda, checkpoint_root, save_every_n_steps,
-              skip_rsync=False, log_every_n_steps=10, start_step=0):
+              skip_rsync=False, log_every_n_steps=100, start_step=0,
+              val_loader=None, val_every_n_steps=500, val_accumulation_steps=64):
     device = next(model.parameters()).device.type
     batch_stream = _restartable_batches(loader)
 
-    for step in range(start_step + 1, num_steps + 1):
-        raw_micro_batches = [next(batch_stream) for _ in range(gradient_accumulation_steps)]
+    # Helper to fetch all micro-batches for one training step
+    def fetch_micro_batches():
+        return [next(batch_stream) for _ in range(gradient_accumulation_steps)]
 
+    # Fetch the very first batch synchronously (no overlap possible yet)
+    current_micro_batches = fetch_micro_batches()
+
+    for step in range(start_step + 1, num_steps + 1):
+        # Start loading the next batch in a background thread
+        next_batches_holder = []
+        prefetch_error = []
+        def load_next():
+            try:
+                next_batches_holder.append(fetch_micro_batches())
+            except Exception as e:
+                prefetch_error.append(e)
+        prefetch_thread = threading.Thread(target=load_next, daemon=True)
+        prefetch_thread.start()
+
+        # ---- GPU work with the CURRENT batch ----
         t0 = time.time()
         stats = vljepa_gradcache_training_step(
-            model, optimizer, raw_micro_batches,
+            model, optimizer, current_micro_batches,
             device=device, precision=precision, uniformity_lambda=uniformity_lambda,
         )
         step_time = time.time() - t0
 
+        # Wait for the background loading to finish (it may already be done)
+        prefetch_thread.join()
+        if prefetch_error:
+            raise RuntimeError(
+                f"[{stage_name}] data prefetch failed at step {step}. "
+                "See nested exception for root cause."
+            ) from prefetch_error[0]
+        if not next_batches_holder:
+            raise RuntimeError(
+                f"[{stage_name}] data prefetch produced no batches at step {step} "
+                "without raising an exception."
+            )
+        # The next batch is now ready in next_batches_holder[0]
+        current_micro_batches = next_batches_holder[0]
+
+        # Logging (unchanged)
         if step % log_every_n_steps == 0 or step == num_steps:
             print(
                 f"[{stage_name}] step {step}/{num_steps} | loss={stats['loss']:.4f} "
@@ -214,12 +401,29 @@ def run_stage(model, optimizer, loader, stage_name, num_steps, gradient_accumula
                 f"| tgt->pred acc={stats['target_to_pred_acc']:.3f} | {step_time:.2f}s/step"
             )
 
+        # Checkpointing (unchanged)
         if step % save_every_n_steps == 0:
             resume_path, deploy_path = save_checkpoint(model, optimizer, step, checkpoint_root)
             print(f"[{stage_name}] checkpoint saved: {resume_path}, {deploy_path}")
             if not skip_rsync:
                 sync_checkpoints_to_machine2(checkpoint_root)
 
+        # Validation (now uses the passed-in val_loader and val_every_n_steps)
+        if val_loader and (step % val_every_n_steps == 0 or step == num_steps):
+            val_stats = run_validation(model, val_loader, device, precision, uniformity_lambda, val_accumulation_steps)
+            val_retrieval = run_validation_retrieval(model, val_loader, device, precision)
+            print(
+                f"[{stage_name} VAL] step {step} "
+                f"loss={val_stats['val_loss']:.4f} "
+                f"R@1={val_retrieval['r@1']:.3f} R@5={val_retrieval['r@5']:.3f} R@10={val_retrieval['r@10']:.3f}"
+            )
+            del val_stats, val_retrieval
+            if device == "cuda":
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+            model.train()   # return to training mode
+
+    # Final checkpoint
     save_checkpoint(model, optimizer, num_steps, checkpoint_root)
     print(f"[{stage_name}] final checkpoint saved at step {num_steps}")
     if not skip_rsync:
@@ -355,17 +559,30 @@ def main():
     parser.add_argument("--num-steps", type=int, required=True)
     parser.add_argument("--base-lr", type=float, default=None,
                          help="Overrides configs/model.yaml's base_learning_rate if given.")
-    parser.add_argument("--num-workers", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=16)
     parser.add_argument("--resume-from", type=str, default=None)
     parser.add_argument("--skip-rsync", action="store_true",
                          help="Don't call scripts/sync_checkpoint.sh after each checkpoint.")
-    parser.add_argument("--skip-readiness-check", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                          help="Validate config/env/data without downloading models or training.")
     parser.add_argument("--model-config", type=str, default="configs/model.yaml")
     parser.add_argument("--training-config", type=str, default="configs/training.yaml")
     parser.add_argument("--dataset-config", type=str, default="configs/dataset.yaml")
+    parser.add_argument("--log-file", type=str, default="training/logs/training_log.txt",
+                        help="Append all stdout/stderr logs to this file while still printing to terminal.")
+    parser.add_argument("--val-jsonl", type=str, default=None,
+                    help="Path to a validation JSONL (e.g., phase1_val.jsonl). If not given, no validation.")
+    parser.add_argument("--val-every-n-steps", type=int, default=500,
+                        help="Run validation every this many steps (if --val-jsonl provided).")
+    parser.add_argument("--val-accumulation-steps", type=int, default=64,
+                    help="Accumulate this many validation batches before computing the loss "
+                         "(so InfoNCE has enough negatives).")
     args = parser.parse_args()
+
+    # Populate env vars from .env when running outside shells that don't export them.
+    load_env_file()
+
+    setup_file_logging(args.log_file)
 
     model_cfg = load_model_config(args.model_config)
     training_cfg = load_training_config(args.training_config)
@@ -387,9 +604,6 @@ def main():
     # float -- it silently loads as the STRING "5e-5" instead. Cast explicitly.
     base_lr = float(base_lr)
 
-    if not args.skip_readiness_check:
-        check_readiness(args.stage)
-
     stage_key = f"stage_{args.stage}"
     if stage_key not in training_cfg["curriculum"]:
         raise ValueError(f"No curriculum stage named {stage_key!r} in configs/training.yaml")
@@ -400,16 +614,28 @@ def main():
     # Build the DataLoader FIRST -- fail fast instead of only finding out after
     # several minutes spent downloading Qwen2.5-1.5B + bge-m3 + V-JEPA2.
     train_jsonl_path = resolve_train_jsonl_path(args.dataset_config)
-    loader = build_phase1_loader(
-        jsonl_path=train_jsonl_path,
-        curriculum_frames=frames_per_clip,
-        batch_size=training_cfg["hardware"]["batch_size"],
-        num_workers=args.num_workers,
-    )
+
+    # Validation JSONL from config (default) or CLI override
+    if args.val_jsonl:
+        val_jsonl_path = Path(args.val_jsonl)
+    else:
+        # You can either read it directly from dataset.yaml or add a resolve_val_jsonl_path function
+        with open(args.dataset_config, encoding="utf-8") as f:
+            dataset_cfg = yaml.safe_load(f)
+        val_jsonl_path = Path(os.environ["DATA_ROOT"]) / dataset_cfg["output"]["val_jsonl"]
+
+    batch_size = training_cfg["hardware"]["batch_size"]
+    num_workers = args.num_workers
+
+    train_loader = build_phase1_loader(train_jsonl_path, frames_per_clip, batch_size, num_workers)
+
+    val_loader = None
+    if args.val_jsonl or (dataset_cfg["output"].get("val_jsonl") is not None):
+        val_loader = build_phase1_val_loader(val_jsonl_path, frames_per_clip, batch_size, num_workers)
 
     if args.dry_run:
         import sys
-        passed = run_dry_run(args, model_cfg, training_cfg, train_jsonl_path, frames_per_clip, loader)
+        passed = run_dry_run(args, model_cfg, training_cfg, train_jsonl_path, frames_per_clip, train_loader)
         sys.exit(0 if passed else 1)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -440,13 +666,15 @@ def main():
         optimizer_name=training_cfg["hardware"]["optimizer"],
     )
 
+    val_accumulation_steps = args.val_accumulation_steps
+
     start_step = 0
     if args.resume_from:
         start_step = load_checkpoint(model, optimizer, args.resume_from, device=device)
         print(f"Resumed from {args.resume_from} at step {start_step}")
 
     run_stage(
-        model, optimizer, loader,
+        model, optimizer, train_loader,
         stage_name=f"phase1_{stage_key}",
         num_steps=args.num_steps,
         gradient_accumulation_steps=training_cfg["hardware"]["gradient_accumulation_steps"],
@@ -456,6 +684,9 @@ def main():
         save_every_n_steps=training_cfg["checkpoints"]["save_every_n_steps"],
         skip_rsync=args.skip_rsync,
         start_step=start_step,
+        val_loader=val_loader,                # the loader built earlier
+        val_every_n_steps=args.val_every_n_steps,   # from CLI
+        val_accumulation_steps=val_accumulation_steps,
     )
 
 

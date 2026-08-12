@@ -23,22 +23,38 @@ from training.losses.info_nce_loss import DEFAULT_UNIFORMITY_LAMBDA, bidirection
 
 def prepare_micro_batches(model: VLJEPA, raw_micro_batches, device="cuda", precision="bf16"):
     """
-    raw_micro_batches: list of (video_frames, captions) tuples from
-    training/data/loader.py's build_phase1_loader(), one per accumulation
-    step (e.g. 16 of them for configs/training.yaml's
-    gradient_accumulation_steps=16).
-
-    Precomputes visual_embeds ONCE per micro-batch (X-Encoder is frozen, runs
-    under no_grad -- no reason to re-run it twice across GradCache's 2 passes).
+    Batch all micro-batch frames together for ONE X-Encoder forward pass,
+    then split back. Massively more efficient than looping.
     """
     amp_dtype = _PRECISION_TO_DTYPE[precision]
     amp_enabled = device.startswith("cuda") and precision != "fp32"
 
-    prepared = []
+    # Extract all frames and captions
+    all_video_frames = []
+    all_captions = []
     for video_frames, captions in raw_micro_batches:
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=amp_enabled):
-            visual_embeds = model.x_encoder.encode_frames(video_frames.to(device))
-        prepared.append({"visual_embeds": visual_embeds, "captions": captions})
+        all_video_frames.append(video_frames)
+        all_captions.extend(captions)
+    
+    # Batch encode all frames at once
+    batched_frames = torch.cat(all_video_frames, dim=0).to(device)  # (B*accumulation_steps, T, C, H, W)
+    with torch.inference_mode():
+        batched_visual_embeds = model.x_encoder.encode_frames(batched_frames)  # [B*acc, N_tokens, D]
+    
+    # Tokenize all captions at once
+    input_ids, attention_mask = model.y_encoder.tokenize(all_captions)
+    
+    # Split back into micro-batch structure for GradCache
+    prepared = []
+    idx = 0
+    for video_frames, captions in raw_micro_batches:
+        batch_size = len(captions)
+        prepared.append({
+            "visual_embeds": batched_visual_embeds[idx:idx+batch_size],
+            "input_ids": input_ids[idx:idx+batch_size].to(device),
+            "attention_mask": attention_mask[idx:idx+batch_size].to(device),
+        })
+        idx += batch_size
     return prepared
 
 
@@ -65,7 +81,8 @@ def make_forward_fn(model: VLJEPA, device="cuda", precision="bf16", query_condit
                 )
             s_hat_y = model.predictor(visual_embeds=micro_batch["visual_embeds"])   # visual-only, [B, D]
 
-            input_ids, attention_mask = model.y_encoder.tokenize(micro_batch["captions"])
+            input_ids = micro_batch["input_ids"]
+            attention_mask = micro_batch["attention_mask"]
             s_y = model.y_encoder(input_ids=input_ids, attention_mask=attention_mask)   # [B, D]
 
         return s_hat_y, s_y

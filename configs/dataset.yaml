@@ -2,22 +2,26 @@
 # metadata_path and cache.subdir are relative to DATA_ROOT (set in .env).
 
 sources:
-  cc3m:
-    source: cc3m
+  recap_datacomp1b:
+    source: recap_datacomp1b
     media_type: image
-    metadata_path: cc3m/metadata.tsv
+    metadata_path: recap_datacomp1b_metadata.jsonl
   # yfcc100m: dropped (#48-addendum) — Yahoo Webscope (the only source with
   # real captions) is dead; the raw data itself never met the bar, not just
   # a dead link. Replaced by panda70m below.
   panda70m:
     source: panda70m
     media_type: video
-    metadata_path: panda70m/metadata.jsonl
+    metadata_path: panda70m_metadata.jsonl
+  internvid:
+    source: internvid
+    media_type: video
+    metadata_path: "internvid_metadata.jsonl"
 
 cache:
   subdir: cache
 
 output:
-  # Relative to DATA_ROOT — matches the phase1/ directory convention agreed
-  # in issue #48 (DATA_ROOT/phase1/phase1_combined.jsonl).
-  train_jsonl: phase1/phase1_combined.jsonl
+  train_jsonl: "phase1_train.jsonl"
+  val_jsonl:   "phase1_val.jsonl"
+  val_ratio: 0.05          # fraction held out for validation

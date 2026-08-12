@@ -20,11 +20,15 @@ import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-MODEL_ID = "Qwen/Qwen2.5-1.5B"
-SHARED_EMBED_DIM = 1536   # per paper + configs/model.yaml (projection_dim: 1536) + system design §4.1.
-                          # Was incorrectly 768 before -- caught during a cross-check against
-                          # configs/model.yaml, which fixed this at 1536 for BOTH Predictor and Y-Encoder.
-MAX_QUERY_LEN = 512
+
+# Read configs/model.yaml
+with open("configs/model.yaml", "r") as f:
+    import yaml
+    model_config = yaml.safe_load(f)
+
+MODEL_ID = model_config["predictor"]["model_name"]
+SHARED_EMBED_DIM = model_config["predictor"]["projection_dim"]
+MAX_QUERY_LEN = model_config["predictor"]["max_context_tokens"]
 
 
 def apply_upper_half_layers(backbone):
@@ -42,6 +46,13 @@ def apply_upper_half_layers(backbone):
 
     backbone.layers = kept_layers
     backbone.config.num_hidden_layers = len(kept_layers)
+
+    # Reindex the retained layers so cache lookups start at 0 again.
+    for layer_idx, layer in enumerate(backbone.layers):
+        if hasattr(layer, "layer_idx"):
+            layer.layer_idx = layer_idx
+        if hasattr(layer, "self_attn") and hasattr(layer.self_attn, "layer_idx"):
+            layer.self_attn.layer_idx = layer_idx
 
     del kept_layers
     gc.collect()
@@ -81,9 +92,9 @@ def patch_bidirectional_mask(backbone):
     return backbone
 
 
-def load_bidirectional_backbone(model_id=MODEL_ID, device="cuda", torch_dtype=torch.bfloat16):
+def load_bidirectional_backbone(model_id=MODEL_ID, device="cuda", dtype=torch.bfloat16):
     """
-    torch_dtype defaults to bfloat16, matching configs/training.yaml's
+    dtype defaults to bfloat16, matching configs/training.yaml's
     precision: "bf16" and how y_encoder.py already loads its backbone --
     training runs under bf16 autocast regardless of storage dtype, so
     keeping these weights in float32 bought nothing numerically and only
@@ -96,7 +107,7 @@ def load_bidirectional_backbone(model_id=MODEL_ID, device="cuda", torch_dtype=to
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    causal_lm = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch_dtype).to(device)
+    causal_lm = AutoModelForCausalLM.from_pretrained(model_id, dtype=dtype).to(device)
     backbone = causal_lm.model
 
     apply_upper_half_layers(backbone)
@@ -189,8 +200,8 @@ class VLJEPAPredictor(nn.Module):
 
 
 def build_model(model_id=MODEL_ID, shared_dim=SHARED_EMBED_DIM, vision_dim=None,
-                 device="cuda", freeze_backbone=False, torch_dtype=torch.bfloat16):
-    backbone, tokenizer, hidden_dim = load_bidirectional_backbone(model_id, device, torch_dtype=torch_dtype)
+                 device="cuda", freeze_backbone=False, dtype=torch.bfloat16):
+    backbone, tokenizer, hidden_dim = load_bidirectional_backbone(model_id, device, dtype=dtype)
     model = VLJEPAPredictor(backbone, hidden_dim, shared_dim, vision_dim=vision_dim,
                              freeze_backbone=freeze_backbone).to(device)
     return model, tokenizer

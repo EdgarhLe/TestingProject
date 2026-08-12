@@ -8,16 +8,17 @@ x_encoder:
   image_size: 256                        # input resolution, dùng bởi training/data/unified_dataset.py (UnifiedDataset)
 
 predictor:
-  model_name: "Qwen/Qwen2.5-1.5B"      # Required VRAM: 5.82 GiB
+  model_name: "meta-llama/Llama-3.2-1B"      # Required VRAM: 5.82 GiB
   use_layers: "upper_half"              # tương đương layers 8–16 của Llama-3.2-1B trong paper
   attention_mask: "bidirectional"        # thay causal mask theo thiết kế VL-JEPA
   max_context_tokens: 512
   projection_dim: 1536                   # chiều shared embedding space
 
 y_encoder:
-  model_name: "BAAI/bge-m3"
+  model_name: "google/embeddinggemma-300m"
   lr_multiplier: 0.05                    # LR nhỏ hơn để giữ pretrained multilingual capability
   projection_dim: 1536
+  max_text_len: 512
 
 embedding_dim: 1536                      # shared space dimension (theo paper)
 base_learning_rate: 5e-5

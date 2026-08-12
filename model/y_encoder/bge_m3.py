@@ -24,16 +24,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
 
-Y_ENCODER_MODEL_ID = "BAAI/bge-m3"
-SHARED_EMBED_DIM = 1536
-DEFAULT_Y_ENCODER_LR_MULTIPLIER = 0.05
-MAX_TEXT_LEN = 512
+# Reading configs/model.yaml
+with open("configs/model.yaml", "r") as f:
+    import yaml
+    model_config = yaml.safe_load(f)
+Y_ENCODER_MODEL_ID = model_config["y_encoder"]["model_name"]
+SHARED_EMBED_DIM = model_config["y_encoder"]["projection_dim"]
+DEFAULT_Y_ENCODER_LR_MULTIPLIER = model_config["y_encoder"]["lr_multiplier"]
+MAX_TEXT_LEN = model_config["y_encoder"]["max_text_len"]
 
 
 # ---------------------------------------------------------------------
 # Load the real backbone (requires network access to download from HuggingFace Hub)
 # ---------------------------------------------------------------------
-def load_y_encoder_backbone(model_name=Y_ENCODER_MODEL_ID, device="cuda", torch_dtype=torch.float16):
+def load_y_encoder_backbone(model_name=Y_ENCODER_MODEL_ID, device="cuda", dtype=torch.float16):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     # add_pooling_layer=False: we do CLS/mean pooling manually in YEncoder,
     # so the default XLM-RoBERTa pooler (Dense+Tanh) is unnecessary and would add
@@ -41,8 +45,7 @@ def load_y_encoder_backbone(model_name=Y_ENCODER_MODEL_ID, device="cuda", torch_
     # can be confusing during debugging.
     backbone = AutoModel.from_pretrained(
         model_name,
-        add_pooling_layer=False,
-        torch_dtype=torch_dtype,
+        dtype=dtype,
     ).to(device)
     hidden_dim = backbone.config.hidden_size
     return backbone, tokenizer, hidden_dim
@@ -105,8 +108,8 @@ class YEncoder(nn.Module):
 
 
 def build_y_encoder(model_name=Y_ENCODER_MODEL_ID, shared_dim=SHARED_EMBED_DIM,
-                     device="cuda", pooling="cls", freeze_backbone=False, torch_dtype=torch.float16):
-    backbone, tokenizer, hidden_dim = load_y_encoder_backbone(model_name, device, torch_dtype=torch_dtype)
+                     device="cuda", pooling="cls", freeze_backbone=False, dtype=torch.float16):
+    backbone, tokenizer, hidden_dim = load_y_encoder_backbone(model_name, device, dtype=dtype)
     model = YEncoder(backbone, tokenizer, hidden_dim, shared_dim=shared_dim,
                       pooling=pooling, freeze_backbone=freeze_backbone).to(device)
     return model

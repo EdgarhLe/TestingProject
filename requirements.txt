@@ -51,3 +51,4 @@ scipy>=1.4.1
 yt-dlp>=2024.1.0
 imageio-ffmpeg>=0.5.0   # bundled, known-working ffmpeg binary — system
                          # ffmpeg installs have proven unreliable on Windows
+datasets>=5.0.1

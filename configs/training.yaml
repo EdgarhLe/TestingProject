@@ -6,8 +6,8 @@ hardware:
   precision: "bf16"
   gradient_checkpointing: true
   optimizer: "adamw_8bit"         # bitsandbytes 8-bit Adam
-  batch_size: 1                   # tăng lên 2 nếu bộ nhớ cho phép
-  gradient_accumulation_steps: 16 # effective batch size = 16–32
+  batch_size: 4                   # tăng lên 2 nếu bộ nhớ cho phép
+  gradient_accumulation_steps: 8 # effective batch size = 16–32
 
 curriculum:
   # Stage A — Tuần 3–5
@@ -17,13 +17,13 @@ curriculum:
 
   # Stage B — Tuần 5–6
   stage_b:
-    frames_per_clip: 4
-    description: "4 frames/clip — batch trung bình"
+    frames_per_clip: 8
+    description: "8 frames/clip — batch trung bình"
 
   # Stage C — Tuần 6–7
   stage_c:
-    frames_per_clip: 8   # đến 16 nếu bộ nhớ cho phép
-    description: "8–16 frames/clip — batch nhỏ + gradient accumulation"
+    frames_per_clip: 16   # đến 16 nếu bộ nhớ cho phép
+    description: "16 frames/clip — batch nhỏ + gradient accumulation"
 
 phases:
   # Phase 1 — General pretraining (Tuần 3–7)
@@ -51,4 +51,4 @@ checkpoints:
   save_every_n_steps: 500
 
 loss:
-  uniformity_lambda: 0.01
+  uniformity_lambda: 0.001

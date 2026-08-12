@@ -22,7 +22,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import yaml
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from torch.utils.data import DataLoader, Dataset
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -89,23 +89,49 @@ class Phase1Dataset(Dataset):
     def __len__(self):
         return len(self._samples)
 
+    def _delete_corrupt_media(self, path: Path, error: Exception):
+        try:
+            path.unlink(missing_ok=True)
+            print(f"[loader] deleted corrupt media: {path} ({error})")
+        except OSError as unlink_error:
+            print(f"[loader] failed deleting corrupt media: {path} ({unlink_error})")
+
     def __getitem__(self, index):
-        sample = self._samples[index]
-        path = self._data_root / sample["data_path"]
-        if not path.exists():
-            raise FileNotFoundError(
-                f"{path} missing but listed in phase1_combined.jsonl -- "
-                "re-run training/data/preprocess.py"
-            )
+        # Robust fallback for stale manifests: if a corrupt file slipped into JSONL,
+        # delete it and try nearby samples instead of aborting training.
+        max_attempts = min(32, len(self._samples))
+        last_error = None
 
-        if sample["media_type"] == "image":
-            frame = _load_image(path)
-            frames = frame.unsqueeze(0).repeat(self.T, 1, 1, 1)
-        else:
-            frames = _load_video(path, self.T)
+        for attempt in range(max_attempts):
+            candidate_idx = (index + attempt) % len(self._samples)
+            sample = self._samples[candidate_idx]
+            path = self._data_root / sample["data_path"]
 
-        frames = _resize(frames, self._image_size)
-        return frames, sample["caption"]
+            try:
+                if not path.exists():
+                    raise FileNotFoundError(
+                        f"{path} missing but listed in phase1_combined.jsonl -- "
+                        "re-run training/data/preprocess.py"
+                    )
+
+                if sample["media_type"] == "image":
+                    frame = _load_image(path)
+                    frames = frame.unsqueeze(0).repeat(self.T, 1, 1, 1)
+                else:
+                    frames = _load_video(path, self.T)
+
+                frames = _resize(frames, self._image_size)
+                return frames, sample["caption"]
+
+            except (FileNotFoundError, UnidentifiedImageError, OSError, ValueError) as error:
+                last_error = error
+                self._delete_corrupt_media(path, error)
+                continue
+
+        raise RuntimeError(
+            "Failed to load a valid sample after multiple retries. "
+            "Dataset likely has too many corrupt/missing files."
+        ) from last_error
 
 
 def build_phase1_loader(jsonl_path, curriculum_frames, batch_size, num_workers,
@@ -129,3 +155,19 @@ def build_phase1_loader(jsonl_path, curriculum_frames, batch_size, num_workers,
 
     dataset = Phase1Dataset(jsonl_path, data_root, curriculum_frames, image_size)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+
+def build_phase1_val_loader(val_jsonl_path, curriculum_frames, batch_size, num_workers,
+                            data_root=None, image_size=None):
+    """
+    Build a validation DataLoader (identical to training but shuffle=False).
+    Use a separate JSONL with held‑out samples.
+    """
+    return build_phase1_loader(
+        jsonl_path=val_jsonl_path,
+        curriculum_frames=curriculum_frames,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        data_root=data_root,
+        image_size=image_size,
+        shuffle=False,          # deterministic order for evaluation
+    )

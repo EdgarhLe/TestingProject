@@ -154,6 +154,8 @@ def build_vljepa(
     )
 
     model = VLJEPA(x_encoder, predictor, y_encoder).to(device)
+    model.predictor = torch.compile(model.predictor)
+    model.y_encoder = torch.compile(model.y_encoder)
     return model, predictor_tokenizer
 
 
@@ -229,7 +231,7 @@ def build_vljepa_optimizer(model: VLJEPA, base_lr,
 _PRECISION_TO_DTYPE = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}
 
 
-def training_step(model: VLJEPA, optimizer, video_paths, queries, targets,
+def training_step(model: VLJEPA, optimizer, video_frames, captions,
                    predictor_tokenizer, device="cuda", precision="bf16",
                    uniformity_lambda=DEFAULT_UNIFORMITY_LAMBDA):
     """
@@ -252,24 +254,23 @@ def training_step(model: VLJEPA, optimizer, video_paths, queries, targets,
     amp_dtype = _PRECISION_TO_DTYPE[precision]
     amp_enabled = device.startswith("cuda") and precision != "fp32"
 
-    model.train()
-    model.x_encoder.eval()   # frozen -> always keep it in eval() (disables dropout if any, though it
-                              # usually doesn't matter since it's frozen)
-
+    queries = captions  # same text as query and target
+    targets = captions
+    
     with torch.no_grad():
-        visual_embeds = model.encode_visual(video_paths).to(device)
+        visual_embeds = model.x_encoder.encode_frames(video_frames).to(device)
 
     with torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=amp_enabled):
         s_hat_y, s_y = model(visual_embeds, queries, targets, predictor_tokenizer, train_mode=True)
         loss, stats = bidirectional_infonce_loss(
             s_hat_y, s_y, model.logit_scale, uniformity_lambda=uniformity_lambda,
         )
-
+    
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
     model.clamp_logit_scale()
-
+    
     stats["loss"] = loss.item()
     return stats
 
