@@ -1,0 +1,74 @@
+[
+  {
+    "test_id": "QA-001",
+    "query_id": "p1-3",
+    "query_text": "Đây là phần giới thiệu phần thưởng cho một cuộc thi được thiết kế với nền xanh, chữ trắng phủ lên video giới thiệu cuộc thi. Tổng có 18 giải thưởng chính cho cuộc thi. Hỏi tổng giá trị của các giải thưởng chính là bao nhiêu?",
+    "expected": {
+      "video_id": "L02_V003",
+      "frame_index": 2310,
+      "answer": "100.000.000 VNĐ"
+    },
+    "difficulty": "hard",
+    "source": "sample"
+  },
+  {
+    "test_id": "QA-002",
+    "query_id": "p1-4",
+    "query_text": "Một bác sĩ tóc bạc, đeo kính đang trả lời phỏng vấn. Sau đó là cảnh vị bác sĩ này đang nói chuyện với một bệnh nhân nữ quay lưng lại với camera mặc áo đen. Trên bàn có 2 cây bút. Bên trái áo của bác sĩ có thêu dòng chữ màu đỏ gồm tên, học hàm, học vị của vị bác sĩ này. Hỏi họ và tên đầy đủ của bác sĩ là gì?",
+    "expected": {
+      "video_id": "L03_V002",
+      "frame_index": 1540,
+      "answer": "Nguyễn Văn An"
+    },
+    "difficulty": "medium",
+    "source": "sample"
+  },
+  {
+    "test_id": "QA-003",
+    "query_id": "synthetic-qa-01",
+    "query_text": "Dòng chữ trên bảng hiệu ngân hàng ở góc bên phải màn hình là gì?",
+    "expected": {
+      "video_id": "L01_V001",
+      "frame_index": 350,
+      "answer": "Ngân hàng ACB"
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "QA-004",
+    "query_id": "synthetic-qa-02",
+    "query_text": "Người MC mặc áo vest màu gì trong buổi phát sóng trực tiếp?",
+    "expected": {
+      "video_id": "L01_V002",
+      "frame_index": 820,
+      "answer": "Màu xanh đen"
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "QA-005",
+    "query_id": "synthetic-qa-03",
+    "query_text": "Biển số xe máy màu vàng đỗ trước cửa nhà là số bao nhiêu?",
+    "expected": {
+      "video_id": "L02_V001",
+      "frame_index": 1240,
+      "answer": "59-F1 123.45"
+    },
+    "difficulty": "medium",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "QA-006",
+    "query_id": "synthetic-qa-04",
+    "query_text": "Tên cuốn sách đang mở trên bàn của giáo sư là gì?",
+    "expected": {
+      "video_id": "L03_V001",
+      "frame_index": 670,
+      "answer": "Trí tuệ nhân tạo thế hệ mới"
+    },
+    "difficulty": "hard",
+    "source": "synthetic"
+  }
+]

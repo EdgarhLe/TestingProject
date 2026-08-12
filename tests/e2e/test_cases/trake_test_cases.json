@@ -1,0 +1,146 @@
+[
+  {
+    "test_id": "TRAKE-001",
+    "query_id": "p1-5",
+    "query_text": "E1: Người đầu bếp cho cá vào một tô màu trắng. Hãy lấy khoảnh khắc con cá cuoói cùng rớt khỏi dĩa\nE2: Người đầu bếp đổ bột vào một tô cá để chiên. Hãy lấy khoảnh khắc đầu tiên mà chiếc đũa của người đầu bếp chạm vào cá để trộn bột.\nE3: Tiếp theo, người đầu bếp này dùng đũa để kiểm tra độ nóng của dầu. Hãy lấy khoảnh khắc đầu tiên chiếc đũa được nhấc ra khỏi dầu.",
+    "expected": {
+      "video_id": "L01_V001",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 512
+        },
+        {
+          "event_index": 1,
+          "frame_index": 870
+        },
+        {
+          "event_index": 2,
+          "frame_index": 1203
+        }
+      ]
+    },
+    "difficulty": "medium",
+    "source": "sample"
+  },
+  {
+    "test_id": "TRAKE-002",
+    "query_id": "p1-6",
+    "query_text": "E1: Một người đang cắt đôi ổ bánh mì có rắc mè rồi đem nướng trên chảo. Hãy lấy khoảnh khắc chiếc dao cắt qua hoàn toàn chiếc bánh.\nE2: Sau đó người này rắc bột lên những miếng thịt, trong quá trình này người đầu bếp lật những miếng thịt để rắc bột đều hai mặt. Hãy lấy khoảnh khắc đầu tiên người đầu bếp này buông tay khỏi miếng thịt sau khi lật miếng thịt đầu tiên.\nE3: Các miếng thịt sau đó được đem đi áp chảo cùng với bơ (3 ngang 1 dọc theo chiều của camera). Hãy lấy khoảnh khắc đầu tiên người đầu bếp cầm vào chảo để nhấc lên đảo bơ đều xung quanh.",
+    "expected": {
+      "video_id": "L01_V002",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 350
+        },
+        {
+          "event_index": 1,
+          "frame_index": 720
+        },
+        {
+          "event_index": 2,
+          "frame_index": 1150
+        }
+      ]
+    },
+    "difficulty": "hard",
+    "source": "sample"
+  },
+  {
+    "test_id": "TRAKE-003",
+    "query_id": "synthetic-trake-01",
+    "query_text": "E1: Người diễn viên bước vào sân khấu từ phía bên trái.\nE2: Người diễn viên cúi chào khán giả.\nE3: Người diễn viên bắt đầu cất tiếng hát bài hát mở màn.",
+    "expected": {
+      "video_id": "L02_V001",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 150
+        },
+        {
+          "event_index": 1,
+          "frame_index": 320
+        },
+        {
+          "event_index": 2,
+          "frame_index": 500
+        }
+      ]
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "TRAKE-004",
+    "query_id": "synthetic-trake-02",
+    "query_text": "E1: Chiếc xe thể thao tăng tốc vượt qua vạch xuất phát.\nE2: Chiếc xe ôm khúc cua gắt ở đoạn đường rẽ trái.\nE3: Chiếc xe cán đích đầu tiên và giơ cờ chiến thắng.",
+    "expected": {
+      "video_id": "L02_V002",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 400
+        },
+        {
+          "event_index": 1,
+          "frame_index": 980
+        },
+        {
+          "event_index": 2,
+          "frame_index": 1650
+        }
+      ]
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "TRAKE-005",
+    "query_id": "synthetic-trake-03",
+    "query_text": "E1: Thí sinh mở chiếc hộp bí mật trên bàn bếp.\nE2: Thí sinh bắt đầu thái củ hành tây thành các lát mỏng.\nE3: Thí sinh dọn món ăn lên đĩa trang trí chuẩn bị phục vụ.",
+    "expected": {
+      "video_id": "L03_V001",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 210
+        },
+        {
+          "event_index": 1,
+          "frame_index": 640
+        },
+        {
+          "event_index": 2,
+          "frame_index": 1380
+        }
+      ]
+    },
+    "difficulty": "medium",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "TRAKE-006",
+    "query_id": "synthetic-trake-04",
+    "query_text": "E1: Robot bắt đầu di chuyển tay máy đến vị trí linh kiện.\nE2: Tay máy kẹp chặt linh kiện và nâng lên chiều cao 50cm.\nE3: Tay máy đặt chính xác linh kiện vào vị trí lắp ráp trên băng chuyền.",
+    "expected": {
+      "video_id": "L03_V003",
+      "events": [
+        {
+          "event_index": 0,
+          "frame_index": 180
+        },
+        {
+          "event_index": 1,
+          "frame_index": 490
+        },
+        {
+          "event_index": 2,
+          "frame_index": 890
+        }
+      ]
+    },
+    "difficulty": "medium",
+    "source": "synthetic"
+  }
+]

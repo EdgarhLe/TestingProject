@@ -1,0 +1,68 @@
+[
+  {
+    "test_id": "KIS-001",
+    "query_id": "p1-1",
+    "query_text": "Cảnh quay bằng flycam một cây cầu ở TP Hồ Chí Minh, tiếp theo đến cảnh quay tòa nhà Bitexco. Một vài cảnh sau đó chuyển qua quay hình ảnh hồ gươm tại Hà Nội.",
+    "expected": {
+      "video_id": "L01_V001",
+      "frame_index": 1042
+    },
+    "difficulty": "medium",
+    "source": "sample"
+  },
+  {
+    "test_id": "KIS-002",
+    "query_id": "p1-2",
+    "query_text": "Một người đàn ông đang trả lời phỏng vấn trong một lễ hội. Phía sau người đàn ông này là một vật trang trí có hình dáng con chim màu tím.",
+    "expected": {
+      "video_id": "L01_V002",
+      "frame_index": 1850
+    },
+    "difficulty": "hard",
+    "source": "sample"
+  },
+  {
+    "test_id": "KIS-003",
+    "query_id": "synthetic-kis-01",
+    "query_text": "Một người đàn ông đang phát biểu tại hội nghị trong hội trường lớn",
+    "expected": {
+      "video_id": "L01_V001",
+      "frame_index": 120
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "KIS-004",
+    "query_id": "synthetic-kis-02",
+    "query_text": "Cảnh quay từ trên cao một chiếc xe hơi màu đỏ đang chạy trên đường cao tốc",
+    "expected": {
+      "video_id": "L02_V001",
+      "frame_index": 500
+    },
+    "difficulty": "easy",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "KIS-005",
+    "query_id": "synthetic-kis-03",
+    "query_text": "Nhóm sinh viên đang ngồi thảo luận nhóm trong thư viện",
+    "expected": {
+      "video_id": "L02_V003",
+      "frame_index": 1420
+    },
+    "difficulty": "medium",
+    "source": "synthetic"
+  },
+  {
+    "test_id": "KIS-006",
+    "query_id": "synthetic-kis-04",
+    "query_text": "Cảnh hoàng hôn trên bãi biển với những ngọn sóng vỗ nhẹ vào bờ",
+    "expected": {
+      "video_id": "L03_V005",
+      "frame_index": 2100
+    },
+    "difficulty": "medium",
+    "source": "synthetic"
+  }
+]
