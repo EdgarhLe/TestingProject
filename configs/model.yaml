@@ -22,8 +22,9 @@ y_encoder:
 
 asr:
   model_name: "Qwen/Qwen3-ASR-1.7B"
-  vad_merge_gap_s: 0.5
-  vad_pad_s: 0.25
+  vad_merge_gap_s: 0.075
+  vad_pad_s: 0.3
+  max_segment_s: 0 # Turn off segment splitting, let the model handle long audio
 
 embedding_dim: 1536                      # shared space dimension (theo paper)
 base_learning_rate: 5e-5
