@@ -20,5 +20,10 @@ y_encoder:
   projection_dim: 1536
   max_text_len: 512
 
+asr:
+  model_name: "Qwen/Qwen3-ASR-1.7B"
+  vad_merge_gap_s: 0.5
+  vad_pad_s: 0.25
+
 embedding_dim: 1536                      # shared space dimension (theo paper)
 base_learning_rate: 5e-5
