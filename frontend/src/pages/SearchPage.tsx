@@ -1,17 +1,17 @@
 import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { TaskType } from '@/api/types';
 import type { KisRequest, QaRequest, TrakeRequest } from '@/api/queryParser';
 import { TaskTypeSelector } from '@/components/search/TaskTypeSelector';
 import { ManualSearchForm } from '@/components/search/ManualSearchForm';
 import { CompetitionImport } from '@/components/search/CompetitionImport';
+import { useSearchContext } from '@/context/SearchContext';
 import { buildResultsPath } from '@/lib/routing';
 import { Sparkles, Terminal, FileText, Search } from 'lucide-react';
 
 export const SearchPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchMode, setSearchMode] = React.useState<'manual' | 'competition'>('manual');
-  const [taskType, setTaskType] = React.useState<TaskType>('KIS');
+  const { state, setTaskType, setSearchMode, setCurrentQuery } = useSearchContext();
+  const { taskType, searchMode } = state;
 
   // Quick search suggestions
   const getSuggestions = () => {
@@ -25,8 +25,8 @@ export const SearchPage: React.FC = () => {
     }
   };
 
-
   const handleManualSearch = (payload: KisRequest | TrakeRequest | QaRequest) => {
+    setCurrentQuery(payload);
     navigate(buildResultsPath(taskType, payload));
   };
 

@@ -139,3 +139,43 @@ Trước khi xác nhận hoàn thành một task, hãy kiểm tra danh sách nà
 Hiện tại phân hệ frontend đang sử dụng thư viện **Mock API** tại [mockApi.ts](file:///c:/Users/Phuc/antigravity/SIU-Collective-Frontend-Setup/frontend/src/api/mockApi.ts) do các API của backend đang được thiết kế ở nhánh `master`.
 
 Khi **Issue #5 (API Contract)** hoàn thành, chúng ta sẽ thay thế Mock API bằng các cuộc gọi API thực tế trỏ tới FastAPI backend.
+
+---
+
+### 7. Chiến lược Quản lý State chung (Shared State Management Strategy - FE1 & FE2 Alignment)
+
+Để FE1 và FE2 phát triển song song mà không xung đột mã nguồn hay phải truyền props quá sâu (prop drilling), dự án thống nhất sử dụng **React Context + `useReducer`** tại [`SearchContext.tsx`](file:///d:/SIU_Collective/frontend/src/context/SearchContext.tsx).
+
+#### Bảng định nghĩa State chung (`SearchState`):
+| Thuộc tính | Kiểu dữ liệu | Mô tả |
+| :--- | :--- | :--- |
+| `taskType` | `'KIS' \| 'Trake' \| 'Q&A'` | Tác vụ tìm kiếm hiện tại |
+| `searchMode` | `'manual' \| 'competition'` | Chế độ tìm kiếm thủ công hoặc đọc file hàng loạt |
+| `currentQuery` | `KisRequest \| TrakeRequest \| QaRequest \| null` | Payload query vừa gửi hoặc đang xử lý |
+| `currentResults` | `KisResponse \| QaResponse \| unknown \| null` | Kết quả truy vấn trả về từ Backend/Mock |
+| `isLoading` | `boolean` | Trạng thái đang tải truy vấn |
+| `error` | `string \| null` | Thông báo lỗi nếu truy vấn thất bại |
+| `selectedItem` | `{ videoId, frameIdx?, timestampSeconds? } \| null` | Thông tin item/video đang được xem chi tiết |
+| `batchQueueStatus` | `'idle' \| 'running' \| 'paused' \| 'completed'` | Trạng thái hàng chờ trong Competition Mode |
+
+#### Cách sử dụng trong Component (Dành cho FE1 & FE2):
+```tsx
+import { useSearchContext } from '@/context/SearchContext';
+
+export const MyFeatureComponent = () => {
+  const { state, setTaskType, setSelectedItem } = useSearchContext();
+  
+  // Đọc state chung:
+  console.log('Task type:', state.taskType);
+  console.log('Selected item:', state.selectedItem);
+
+  // Cập nhật state chung:
+  const handleSelectVideo = (videoId: string, frameIdx: number) => {
+    setSelectedItem({ videoId, frameIdx });
+  };
+
+  return (
+    <div>...</div>
+  );
+};
+```
